@@ -8,16 +8,13 @@ import traceback
 from queue import Queue
 from datetime import datetime
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 import urllib3
 
 # ==================== 配置参数 ====================
 TEST_TIMEOUT = 3
 TEST_PORT = 443
 MAX_THREADS = 5
-CANDIDATE_COUNT = 30
-TOP_NODES = 9
+TOP_NODES_PER_COUNTRY = 2   # 每个国家取最快2个
 
 ENABLE_LOSS_TEST = True
 PING_COUNT = 4
@@ -35,18 +32,26 @@ WEIGHT_SPEED = 0.3
 TXT_OUTPUT_FILE = "bestIp.txt"
 LOG_FILE = "log.txt"
 
-COUNTRY_CODES = {
-    'US': '美国', 'CN': '中国', 'JP': '日本', 'SG': '新加坡', 'KR': '韩国',
-    'GB': '英国', 'FR': '法国', 'DE': '德国', 'AU': '澳大利亚', 'CA': '加拿大',
-    'HK': '中国香港', 'TW': '中国台湾', 'IN': '印度', 'RU': '俄罗斯',
-    'BR': '巴西', 'MX': '墨西哥', 'NL': '荷兰', 'SE': '瑞典', 'CH': '瑞士',
-    'IT': '意大利', 'ES': '西班牙', 'Unknown': '未知'
-}
+# 用户提供的 IP 段（按国家分组）
+# 每个项: (国家名称, [IP段列表])
+COUNTRY_NETS = [
+    ("日本", ["108.162.198.0/22"]),
+    ("德国", [
+        "104.21.0.0/24", "104.24.0.0/24", "104.25.0.0/24",
+        "104.27.0.0/24", "104.26.0.0/24"
+    ]),
+    ("新加坡", [
+        "108.162.192.0/24", "162.159.0.0/24", "172.64.32.0/24"
+    ]),
+    ("美国", [
+        "104.16.0.0/22", "104.18.0.0/22", "104.19.0.0/22",
+        "104.17.0.0/22", "103.31.4.0/22", "103.21.244.0/22"
+    ])
+]
 
 log_lock = threading.Lock()
 
 def log(msg, also_print=True):
-    """线程安全的日志函数，写入文件并输出到 stderr（不再输出到 stdout）"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with log_lock:
         try:
@@ -55,7 +60,7 @@ def log(msg, also_print=True):
         except Exception:
             pass
     if also_print:
-        print(msg, file=sys.stderr)  # 输出到 stderr，避免污染 stdout
+        print(msg, file=sys.stderr)
 
 # 初始化日志文件
 try:
@@ -66,77 +71,44 @@ except Exception:
     pass
 
 # ==================== 辅助函数 ====================
-def get_ip_country(ip):
-    try:
-        socket.inet_aton(ip)
-        session = requests.Session()
-        retry = Retry(total=2, backoff_factor=0.3, status_forcelist=[500,502,503,504])
-        adapter = HTTPAdapter(max_retries=retry)
-        session.mount('http://', adapter)
-        session.mount('https://', adapter)
-
-        try:
-            url = f"https://ipwhois.app/json/{ip}"
-            resp = session.get(url, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                if 'country' in data and data['country']:
-                    country = data['country']
-                    eng_to_cn = {
-                        'United States': '美国', 'China': '中国', 'Japan': '日本',
-                        'Singapore': '新加坡', 'South Korea': '韩国', 'United Kingdom': '英国',
-                        'France': '法国', 'Germany': '德国', 'Australia': '澳大利亚',
-                        'Canada': '加拿大', 'Hong Kong': '中国香港', 'Taiwan': '中国台湾'
-                    }
-                    if country in eng_to_cn:
-                        return eng_to_cn[country]
-                    if len(country) == 2:
-                        return COUNTRY_CODES.get(country, country)
-                    return country
-        except Exception:
-            pass
-
-        try:
-            url = f"http://ip-api.com/json/{ip}?fields=countryCode"
-            resp = session.get(url, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get('status') == 'success' and 'countryCode' in data:
-                    return COUNTRY_CODES.get(data['countryCode'], data['countryCode'])
-        except Exception:
-            pass
-
-        octets = ip.split('.')
-        if len(octets) >= 2 and octets[0] in ('104','108','162','172') and octets[1] in ('18','162','159','64'):
-            return '美国'
-        return '未知'
-    except Exception as e:
-        log(f"IP 国家查询失败 {ip}: {e}")
-        return '未知'
+def cidr_to_ips(cidr, max_ips=20):
+    """
+    将 CIDR 网段转换为 IP 列表，每个网段最多生成 max_ips 个 IP
+    支持 /22 和 /24
+    """
+    network, prefix = cidr.split('/')
+    prefix = int(prefix)
+    octets = list(map(int, network.split('.')))
+    if prefix == 24:
+        base = f"{octets[0]}.{octets[1]}.{octets[2]}"
+        return [f"{base}.{i}" for i in range(1, min(max_ips, 254)+1)]
+    elif prefix == 22:
+        third_base = octets[2] & 0xFC  # 抹掉低2位
+        ips = []
+        for i in range(1, min(max_ips, 254)+1):
+            ip = f"{octets[0]}.{octets[1]}.{third_base}.{i}"
+            ips.append(ip)
+        return ips
+    else:
+        log(f"不支持的掩码: {prefix}")
+        return []
 
 # ==================== 测试核心类 ====================
 class CloudflareNodeTester:
     def __init__(self):
-        self.nodes = set()
-        self.latency_results = []
-        self.detailed_results = []
+        self.country_nodes = {}
         self.lock = threading.Lock()
         self.ping_available = True
         self.speed_available = True
 
     def fetch_known_nodes(self):
-        ip_ranges = [
-            '104.24.0.0/16', '103.21.244.0/22', '103.31.4.0/22',
-            '45.64.64.0/22', '104.28.0.0/16', '188.114.96.0/24',
-            '188.114.97.0/24', '104.22.0.0/16', '104.25.0.0/16'
-        ]
-        for ip_range in ip_ranges:
-            base_ip, cidr = ip_range.split('/')
-            octets = base_ip.split('.')
-            for i in range(1, 21):
-                ip = f"{octets[0]}.{octets[1]}.{octets[2]}.{i + int(octets[3])}"
-                self.nodes.add(ip)
-        log(f"已加载 {len(self.nodes)} 个候选 IP")
+        for country, nets in COUNTRY_NETS:
+            ips = set()
+            for net in nets:
+                generated = cidr_to_ips(net, max_ips=20)
+                ips.update(generated)
+            self.country_nodes[country] = ips
+            log(f"{country} 加载 {len(ips)} 个候选 IP")
 
     def test_latency(self, ip):
         try:
@@ -149,34 +121,35 @@ class CloudflareNodeTester:
         except Exception:
             return None
 
-    def latency_worker(self, queue):
+    def latency_worker(self, queue, results_list):
         while not queue.empty():
             ip = queue.get()
             latency = self.test_latency(ip)
             with self.lock:
-                self.latency_results.append({
+                results_list.append({
                     'ip': ip,
                     'latency_ms': latency,
                     'reachable': latency is not None
                 })
-                if len(self.latency_results) % 100 == 0:
-                    log(f"延迟测试进度: {len(self.latency_results)}/{len(self.nodes)}")
             queue.task_done()
 
-    def test_all_latency(self):
+    def test_country_latency(self, country, ips):
+        log(f"开始测试 {country} 的 {len(ips)} 个 IP 延迟...")
         queue = Queue()
-        for ip in self.nodes:
+        for ip in ips:
             queue.put(ip)
+        results = []
         threads = []
-        thread_count = min(MAX_THREADS, len(self.nodes))
+        thread_count = min(MAX_THREADS, len(ips))
         for _ in range(thread_count):
-            t = threading.Thread(target=self.latency_worker, args=(queue,))
+            t = threading.Thread(target=self.latency_worker, args=(queue, results))
             t.start()
             threads.append(t)
         for t in threads:
             t.join()
-        reachable = sum(1 for r in self.latency_results if r['reachable'])
-        log(f"延迟测试完成，有效节点: {reachable}")
+        reachable = sum(1 for r in results if r['reachable'])
+        log(f"{country} 延迟测试完成，有效节点: {reachable}")
+        return results
 
     def test_loss(self, ip):
         if not ENABLE_LOSS_TEST or not self.ping_available:
@@ -189,8 +162,6 @@ class CloudflareNodeTester:
             if match:
                 return float(match.group(1))
             return 100.0
-        except subprocess.CalledProcessError:
-            return 100.0
         except Exception:
             return 100.0
 
@@ -200,8 +171,7 @@ class CloudflareNodeTester:
         speed = self._do_speed_test(ip, 'https')
         if speed > 0:
             return speed
-        speed = self._do_speed_test(ip, 'http')
-        return speed
+        return self._do_speed_test(ip, 'http')
 
     def _do_speed_test(self, ip, scheme):
         url = f"{scheme}://{ip}{SPEED_TEST_PATH}"
@@ -235,21 +205,21 @@ class CloudflareNodeTester:
         total = (latency_score * w_lat + loss_score * w_loss + speed_score * w_spd) / total_weight
         return round(total, 2)
 
-    def detailed_test(self, candidates):
-        log(f"\n开始对 {len(candidates)} 个候选节点进行丢包和速度测试...")
-        test_sample = candidates[:3]
+    def detailed_test_for_country(self, country, latency_results, candidate_ips):
+        log(f"开始对 {country} 的 {len(candidate_ips)} 个候选节点进行丢包和速度测试...")
+        test_sample = candidate_ips[:3]
         ping_success = sum(1 for ip in test_sample if self.test_loss(ip) < 100)
         if ping_success == 0:
             self.ping_available = False
-            log("检测到 ping 不可用，禁用丢包测试权重")
+            log(f"{country}: ping 不可用，禁用丢包测试权重")
         speed_success = sum(1 for ip in test_sample if self.test_download_speed(ip) > 0)
         if speed_success == 0:
             self.speed_available = False
-            log("检测到速度测试不可用，禁用速度测试权重")
+            log(f"{country}: 速度测试不可用，禁用速度测试权重")
 
         detailed = []
-        for idx, ip in enumerate(candidates, 1):
-            latency_info = next((r for r in self.latency_results if r['ip'] == ip), None)
+        for idx, ip in enumerate(candidate_ips, 1):
+            latency_info = next((r for r in latency_results if r['ip'] == ip), None)
             latency = latency_info['latency_ms'] if latency_info and latency_info['reachable'] else 9999
             loss = self.test_loss(ip) if self.ping_available else 0.0
             speed = self.test_download_speed(ip) if self.speed_available else 0.0
@@ -261,7 +231,7 @@ class CloudflareNodeTester:
                 'speed_mbps': speed,
                 'score': score
             })
-            log(f"  测试 {idx}/{len(candidates)}: {ip} 延迟={latency}ms 丢包={loss}% 速度={speed}Mbps 评分={score}")
+            log(f"{country} 测试 {idx}/{len(candidate_ips)}: {ip} 延迟={latency}ms 丢包={loss}% 速度={speed}Mbps 评分={score}")
         detailed.sort(key=lambda x: x['score'], reverse=True)
         return detailed
 
@@ -269,42 +239,31 @@ class CloudflareNodeTester:
         start_time = time.time()
         try:
             self.fetch_known_nodes()
-            if not self.nodes:
-                log("未找到任何节点，退出")
+            if not self.country_nodes:
+                log("未加载任何节点，退出")
                 return
 
-            log("\n===== 第1阶段: TCP 延迟测试 =====")
-            self.test_all_latency()
+            all_results = {}
+            for country, ips in self.country_nodes.items():
+                log(f"\n===== 开始测试国家: {country} =====")
+                latency_results = self.test_country_latency(country, ips)
+                reachable = [r for r in latency_results if r['reachable']]
+                if not reachable:
+                    log(f"{country} 没有可达节点，跳过")
+                    continue
+                reachable.sort(key=lambda x: x['latency_ms'])
+                candidate_ips = [r['ip'] for r in reachable[:30]]
+                log(f"{country} 筛选出 {len(candidate_ips)} 个延迟最低的节点")
+                detailed_results = self.detailed_test_for_country(country, latency_results, candidate_ips)
+                all_results[country] = detailed_results[:TOP_NODES_PER_COUNTRY]
 
-            reachable = [r for r in self.latency_results if r['reachable']]
-            if not reachable:
-                log("警告：没有可达节点，不生成 bestIp.txt")
-                return
-
-            reachable.sort(key=lambda x: x['latency_ms'])
-            candidate_ips = [r['ip'] for r in reachable[:CANDIDATE_COUNT]]
-            log(f"已筛选出 {len(candidate_ips)} 个延迟最低的节点进行详细测试")
-
-            log("\n===== 第2阶段: 丢包率 & 下载速度测试 =====")
-            detailed_results = self.detailed_test(candidate_ips)
-
-            log("\n===== 最终排名 (IP#国家) =====")
-            # 写入文件 bestIp.txt 并输出到 stdout（供重定向）
             with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                for node in detailed_results[:TOP_NODES]:
-                    country = get_ip_country(node['ip'])
-                    line = f"{node['ip']}#{country}"
-                    f.write(line + '\n')
-                    # 同时输出到 stdout，以便工作流重定向到 bestIp.txt（但现在 stdout 已重定向，所以这行会进入文件）
-                    # 注意：为了兼容性，我们只输出到 stdout，但之前已经通过重定向捕获。这里需要确保没有额外内容。
-                    # 解决方案：只通过 f.write 写入文件，不 print 到 stdout，因为工作流已重定向，但可能会重复。
-                    # 最佳做法：脚本不 print 结果，仅由文件输出。但工作流要求 > bestIp.txt，我们可以去掉重定向，
-                    # 改为脚本内部写文件后，再 cat 文件内容。但为了简单，这里保持原样：写入文件和 print 到 stdout。
-                    # 由于 stdout 被重定向到 bestIp.txt，print 也会进入文件，导致重复。但重复不影响内容（两行相同）。
-                    # 为了避免重复，取消 print，只写文件。
-                    # 以下注释掉 print，避免重复。
-                    # print(line)
-            # 只将结果输出到文件，不再额外 print
+                for country, nodes in all_results.items():
+                    for node in nodes:
+                        line = f"{node['ip']}#{country}"
+                        f.write(line + '\n')
+                        log(line)
+
             elapsed = int(time.time() - start_time)
             log(f"\n全部测试完成，耗时 {elapsed} 秒，结果已保存至 {TXT_OUTPUT_FILE}")
         except Exception as e:
