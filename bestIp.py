@@ -23,8 +23,7 @@ PING_COUNT = 4
 PING_TIMEOUT = 2
 
 ENABLE_SPEED_TEST = True
-# Cloudflare 官方测速端点路径（1MB）
-SPEED_TEST_PATH = "/__down?bytes=1048576"
+SPEED_TEST_PATH = "/__down?bytes=10485760"
 SPEED_TEST_HOST = "speed.cloudflare.com"
 SPEED_TEST_TIMEOUT = 15
 
@@ -43,32 +42,29 @@ COUNTRY_CODES = {
     'IT': '意大利', 'ES': '西班牙', 'Unknown': '未知'
 }
 
-# 线程锁，保护日志文件写入
 log_lock = threading.Lock()
 
 def log(msg, also_print=True):
-    """线程安全的日志函数，同时写入文件和控制台"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with log_lock:
         try:
             with open(LOG_FILE, 'a', encoding='utf-8') as f:
                 f.write(f"[{timestamp}] {msg}\n")
-        except Exception as e:
-            print(f"日志写入失败: {e}")
+        except Exception:
+            pass
     if also_print:
         print(msg)
 
-# 初始化日志文件
+# 初始化日志（清空旧内容）
 try:
     with open(LOG_FILE, 'w', encoding='utf-8') as f:
         f.write("")
     log("========== 脚本启动 ==========")
-except Exception as e:
-    print(f"无法初始化日志文件: {e}")
+except Exception:
+    pass
 
 # ==================== 辅助函数 ====================
 def get_ip_country(ip):
-    """获取 IP 对应的中文国家名称"""
     try:
         socket.inet_aton(ip)
         session = requests.Session()
@@ -116,15 +112,6 @@ def get_ip_country(ip):
         log(f"IP 国家查询失败 {ip}: {e}")
         return '未知'
 
-def clean_ip(ip_str):
-    ip_str = ip_str.strip().rstrip(':')
-    pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
-    if re.match(pattern, ip_str):
-        parts = ip_str.split('.')
-        if all(0 <= int(p) <= 255 for p in parts):
-            return ip_str
-    return None
-
 # ==================== 测试核心类 ====================
 class CloudflareNodeTester:
     def __init__(self):
@@ -132,6 +119,8 @@ class CloudflareNodeTester:
         self.latency_results = []
         self.detailed_results = []
         self.lock = threading.Lock()
+        self.ping_available = True
+        self.speed_available = True
 
     def fetch_known_nodes(self):
         ip_ranges = [
@@ -155,8 +144,7 @@ class CloudflareNodeTester:
                 if s.connect_ex((ip, TEST_PORT)) == 0:
                     return int((time.time() - start) * 1000)
             return None
-        except Exception as e:
-            log(f"延迟测试异常 {ip}: {e}")
+        except Exception:
             return None
 
     def latency_worker(self, queue):
@@ -189,7 +177,7 @@ class CloudflareNodeTester:
         log(f"延迟测试完成，有效节点: {reachable}")
 
     def test_loss(self, ip):
-        if not ENABLE_LOSS_TEST:
+        if not ENABLE_LOSS_TEST or not self.ping_available:
             return 0.0
         try:
             cmd = ['ping', '-c', str(PING_COUNT), '-W', str(PING_TIMEOUT), ip]
@@ -199,26 +187,25 @@ class CloudflareNodeTester:
             if match:
                 return float(match.group(1))
             return 100.0
-        except subprocess.CalledProcessError as e:
-            log(f"Ping 失败 {ip}: 返回码 {e.returncode}")
+        except subprocess.CalledProcessError:
             return 100.0
-        except Exception as e:
-            log(f"Ping 异常 {ip}: {e}")
+        except Exception:
             return 100.0
 
     def test_download_speed(self, ip):
-        """
-        测试通过指定 IP 访问 Cloudflare 测速文件的下载速度。
-        构造 URL: https://{ip}/__down?bytes=...
-        并设置 Host 头为 speed.cloudflare.com。
-        """
-        if not ENABLE_SPEED_TEST:
+        if not ENABLE_SPEED_TEST or not self.speed_available:
             return 0.0
+        speed = self._do_speed_test(ip, 'https')
+        if speed > 0:
+            return speed
+        speed = self._do_speed_test(ip, 'http')
+        return speed
+
+    def _do_speed_test(self, ip, scheme):
+        url = f"{scheme}://{ip}{SPEED_TEST_PATH}"
+        headers = {'Host': SPEED_TEST_HOST}
         try:
-            url = f"https://{ip}{SPEED_TEST_PATH}"
-            headers = {'Host': SPEED_TEST_HOST}
             start = time.time()
-            # 忽略 SSL 证书验证（因为证书域名与 IP 不匹配，但测速无影响）
             resp = requests.get(url, headers=headers, timeout=SPEED_TEST_TIMEOUT,
                                 stream=True, verify=False)
             total_bytes = 0
@@ -230,27 +217,41 @@ class CloudflareNodeTester:
                 speed_mbps = (total_bytes * 8) / (elapsed * 1_000_000)
                 return round(speed_mbps, 2)
             return 0.0
-        except Exception as e:
-            log(f"速度测试失败 {ip}: {e}")
+        except Exception:
             return 0.0
 
     def calculate_score(self, latency_ms, loss_percent, speed_mbps):
         latency_score = max(0, min(100, 100 - (latency_ms / 2))) if latency_ms else 0
         loss_score = 100 - loss_percent
-        speed_score = min(100, (speed_mbps / 20) * 100)  # 假设 20 Mbps 为满分
-        total = (latency_score * WEIGHT_LATENCY +
-                 loss_score * WEIGHT_LOSS +
-                 speed_score * WEIGHT_SPEED)
+        speed_score = min(100, (speed_mbps / 20) * 100) if speed_mbps else 0
+        w_lat = WEIGHT_LATENCY
+        w_loss = WEIGHT_LOSS if self.ping_available else 0
+        w_spd = WEIGHT_SPEED if self.speed_available else 0
+        total_weight = w_lat + w_loss + w_spd
+        if total_weight == 0:
+            return latency_score
+        total = (latency_score * w_lat + loss_score * w_loss + speed_score * w_spd) / total_weight
         return round(total, 2)
 
     def detailed_test(self, candidates):
         log(f"\n开始对 {len(candidates)} 个候选节点进行丢包和速度测试...")
+        # 检测可用性
+        test_sample = candidates[:3]
+        ping_success = sum(1 for ip in test_sample if self.test_loss(ip) < 100)
+        if ping_success == 0:
+            self.ping_available = False
+            log("检测到 ping 不可用，禁用丢包测试权重")
+        speed_success = sum(1 for ip in test_sample if self.test_download_speed(ip) > 0)
+        if speed_success == 0:
+            self.speed_available = False
+            log("检测到速度测试不可用，禁用速度测试权重")
+
         detailed = []
         for idx, ip in enumerate(candidates, 1):
             latency_info = next((r for r in self.latency_results if r['ip'] == ip), None)
             latency = latency_info['latency_ms'] if latency_info and latency_info['reachable'] else 9999
-            loss = self.test_loss(ip) if ENABLE_LOSS_TEST else 0.0
-            speed = self.test_download_speed(ip) if ENABLE_SPEED_TEST else 0.0
+            loss = self.test_loss(ip) if self.ping_available else 0.0
+            speed = self.test_download_speed(ip) if self.speed_available else 0.0
             score = self.calculate_score(latency, loss, speed)
             detailed.append({
                 'ip': ip,
@@ -269,8 +270,7 @@ class CloudflareNodeTester:
             self.fetch_known_nodes()
             if not self.nodes:
                 log("未找到任何节点，退出")
-                with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                    f.write("# 没有找到任何可测试的节点\n")
+                # bestIp.txt 保持为空（不写入任何内容）
                 return
 
             log("\n===== 第1阶段: TCP 延迟测试 =====")
@@ -278,9 +278,7 @@ class CloudflareNodeTester:
 
             reachable = [r for r in self.latency_results if r['reachable']]
             if not reachable:
-                log("警告：没有可达节点，无法产生有效结果。将生成空结果文件。")
-                with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                    f.write("# 没有可达的 Cloudflare 节点\n")
+                log("警告：没有可达节点，不生成 bestIp.txt（空文件）")
                 return
 
             reachable.sort(key=lambda x: x['latency_ms'])
@@ -292,19 +290,19 @@ class CloudflareNodeTester:
 
             log("\n===== 最终排名 (IP#国家) =====")
             with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                for i, node in enumerate(detailed_results[:TOP_NODES], 1):
+                for node in detailed_results[:TOP_NODES]:
                     country = get_ip_country(node['ip'])
-                    line = f"{node['ip']}#{country}"
-                    f.write(line + '\n')
-                    log(line)
+                    line = f"{node['ip']}#{country}\n"
+                    f.write(line)
+                    log(line.rstrip())
 
             elapsed = int(time.time() - start_time)
             log(f"\n全部测试完成，耗时 {elapsed} 秒，结果已保存至 {TXT_OUTPUT_FILE}")
 
         except Exception as e:
             log(f"运行过程中发生未捕获异常: {e}\n{traceback.format_exc()}")
-            with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                f.write(f"# 脚本运行出错: {e}\n")
+            # 异常时也不写入 bestIp.txt 的注释，保持为空或旧内容不变
+            # 这里为了安全，不写入任何内容
 
 # ==================== 主入口 ====================
 if __name__ == "__main__":
@@ -316,5 +314,4 @@ if __name__ == "__main__":
         log("\n用户中断了程序")
     except Exception as e:
         log(f"顶级异常: {e}\n{traceback.format_exc()}")
-        with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-            f.write(f"# 脚本启动失败: {e}\n")
+        # 不写入 bestIp.txt
