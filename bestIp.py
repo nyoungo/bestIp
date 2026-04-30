@@ -1,3 +1,4 @@
+import sys
 import socket
 import re
 import time
@@ -45,6 +46,7 @@ COUNTRY_CODES = {
 log_lock = threading.Lock()
 
 def log(msg, also_print=True):
+    """线程安全的日志函数，写入文件并输出到 stderr（不再输出到 stdout）"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with log_lock:
         try:
@@ -53,9 +55,9 @@ def log(msg, also_print=True):
         except Exception:
             pass
     if also_print:
-        print(msg)
+        print(msg, file=sys.stderr)  # 输出到 stderr，避免污染 stdout
 
-# 初始化日志（清空旧内容）
+# 初始化日志文件
 try:
     with open(LOG_FILE, 'w', encoding='utf-8') as f:
         f.write("")
@@ -235,7 +237,6 @@ class CloudflareNodeTester:
 
     def detailed_test(self, candidates):
         log(f"\n开始对 {len(candidates)} 个候选节点进行丢包和速度测试...")
-        # 检测可用性
         test_sample = candidates[:3]
         ping_success = sum(1 for ip in test_sample if self.test_loss(ip) < 100)
         if ping_success == 0:
@@ -270,7 +271,6 @@ class CloudflareNodeTester:
             self.fetch_known_nodes()
             if not self.nodes:
                 log("未找到任何节点，退出")
-                # bestIp.txt 保持为空（不写入任何内容）
                 return
 
             log("\n===== 第1阶段: TCP 延迟测试 =====")
@@ -278,7 +278,7 @@ class CloudflareNodeTester:
 
             reachable = [r for r in self.latency_results if r['reachable']]
             if not reachable:
-                log("警告：没有可达节点，不生成 bestIp.txt（空文件）")
+                log("警告：没有可达节点，不生成 bestIp.txt")
                 return
 
             reachable.sort(key=lambda x: x['latency_ms'])
@@ -289,22 +289,27 @@ class CloudflareNodeTester:
             detailed_results = self.detailed_test(candidate_ips)
 
             log("\n===== 最终排名 (IP#国家) =====")
+            # 写入文件 bestIp.txt 并输出到 stdout（供重定向）
             with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
                 for node in detailed_results[:TOP_NODES]:
                     country = get_ip_country(node['ip'])
-                    line = f"{node['ip']}#{country}\n"
-                    f.write(line)
-                    log(line.rstrip())
-
+                    line = f"{node['ip']}#{country}"
+                    f.write(line + '\n')
+                    # 同时输出到 stdout，以便工作流重定向到 bestIp.txt（但现在 stdout 已重定向，所以这行会进入文件）
+                    # 注意：为了兼容性，我们只输出到 stdout，但之前已经通过重定向捕获。这里需要确保没有额外内容。
+                    # 解决方案：只通过 f.write 写入文件，不 print 到 stdout，因为工作流已重定向，但可能会重复。
+                    # 最佳做法：脚本不 print 结果，仅由文件输出。但工作流要求 > bestIp.txt，我们可以去掉重定向，
+                    # 改为脚本内部写文件后，再 cat 文件内容。但为了简单，这里保持原样：写入文件和 print 到 stdout。
+                    # 由于 stdout 被重定向到 bestIp.txt，print 也会进入文件，导致重复。但重复不影响内容（两行相同）。
+                    # 为了避免重复，取消 print，只写文件。
+                    # 以下注释掉 print，避免重复。
+                    # print(line)
+            # 只将结果输出到文件，不再额外 print
             elapsed = int(time.time() - start_time)
             log(f"\n全部测试完成，耗时 {elapsed} 秒，结果已保存至 {TXT_OUTPUT_FILE}")
-
         except Exception as e:
             log(f"运行过程中发生未捕获异常: {e}\n{traceback.format_exc()}")
-            # 异常时也不写入 bestIp.txt 的注释，保持为空或旧内容不变
-            # 这里为了安全，不写入任何内容
 
-# ==================== 主入口 ====================
 if __name__ == "__main__":
     try:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -314,4 +319,3 @@ if __name__ == "__main__":
         log("\n用户中断了程序")
     except Exception as e:
         log(f"顶级异常: {e}\n{traceback.format_exc()}")
-        # 不写入 bestIp.txt
