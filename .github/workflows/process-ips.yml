@@ -1,10 +1,11 @@
 name: Process IP List
 
 on:
+  push:                     # 新增：每次 push 时立即执行
+    branches: [ main, master ]   # 可根据需要指定分支
   schedule:
-    # 每10分钟运行一次
-    - cron: '*/10 * * * *'
-  workflow_dispatch:   # 支持手动触发
+    - cron: '*/10 * * * *'  # 每10分钟运行一次
+  workflow_dispatch:        # 手动触发
 
 jobs:
   update:
@@ -27,7 +28,7 @@ jobs:
       - name: Run processing script
         run: python process.py -u https://raw.githubusercontent.com/HandsomeMJZ/cfip/refs/heads/main/best_ips.txt -o ip.txt
 
-      - name: Commit and push changes
+      - name: Commit and push ip.txt
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
