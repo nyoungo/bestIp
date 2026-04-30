@@ -1,10 +1,10 @@
 name: bestIp
 
 on:
-  push:              # 每次 push 时触发
+  push:
   schedule:
-   - cron: '0 */1 * * *' # 每3小时运行一次
-  workflow_dispatch:      # 允许手动触发
+    - cron: '0 */1 * * *'   # 每小时运行一次（cron 格式：每3小时应为 '0 */3 * * *'）
+  workflow_dispatch:
 
 jobs:
   run-script:
@@ -18,13 +18,11 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt || true
+      - name: Install requests
+        run: pip install requests
 
       - name: Run script and save output
-        run: |
-          python bestIp.py > bestIp.txt
+        run: python bestIp.py > bestIp.txt
 
       - name: Commit result
         run: |

@@ -280,69 +280,6 @@ class CloudflareNodeTester:
         except Exception as e:
             print(f"保存结果失败: {e}")
 
-# IP地理位置查询功能
-def batch_query_ip_countries():
-    """批量查询IP地址的国家信息(显示中文)"""
-    print("\n===== IP地址国家信息批量查询 =====")
-    
-    # 从cf_IP.txt文件读取IP地址列表
-    try:
-        with open(TXT_OUTPUT_FILE, 'r', encoding='utf-8') as f:
-            ip_list = []
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and not line.startswith('=') and ':' in line:
-                    # 从格式 "IP:端口#备注" 中提取IP
-                    ip = line.split(':')[0].strip()
-                    ip_list.append(ip)
-                elif line and not line.startswith('#') and not line.startswith('=') and ' ' not in line and '.' in line:
-                    # 纯IP地址行
-                    ip_list.append(line)
-        print(f"从文件读取了 {len(ip_list)} 个IP地址")
-    except Exception as e:
-        print(f"无法从文件读取IP: {str(e)}")
-        print("使用默认IP列表进行演示")
-        # 默认IP列表
-        ip_list = [
-            "108.162.192.3", "108.162.192.7", "108.162.192.4", "108.162.192.9",
-            "162.159.0.4", "162.159.0.1", "162.159.0.3", "108.162.192.2"
-        ]
-    
-    # 清理并验证IP地址列表
-    cleaned_ips = []
-    for ip in ip_list:
-        cleaned_ip = clean_ip(ip)
-        if cleaned_ip:
-            cleaned_ips.append(cleaned_ip)
-        else:
-            print(f"无效的IP地址: {ip}")
-    
-    print(f"清理后有效IP地址数量: {len(cleaned_ips)}")
-    
-    # 获取每个IP的国家信息（已经是中文）
-    results = []
-    for i, ip in enumerate(cleaned_ips):
-        print(f"正在查询 {i+1}/{len(cleaned_ips)}: {ip}")
-        country = get_ip_country(ip)
-        results.append(f"{ip} {country}")
-        
-        # 添加足够的延迟以避免API请求过于频繁
-        if i < len(cleaned_ips) - 1:
-            time.sleep(3)  # 增加延迟到3秒
-    
-    # 将结果写入文件
-    with open(IP_COUNTRIES_FILE, 'w', encoding='utf-8') as f:
-        for result in results:
-            f.write(result + '\n')
-    
-    print(f"\n查询完成！结果已保存到 {IP_COUNTRIES_FILE}")
-    print(f"处理的IP地址总数: {len(results)}")
-    
-    # 显示有国家信息的IP数量
-    successful_queries = sum(1 for r in results if not r.endswith(' 未知'))
-    print(f"获取到国家信息的IP数量: {successful_queries}")
-    print("===================================")
-
 # Cloudflare节点测试功能
 def test_cloudflare_nodes():
     """运行Cloudflare节点测试"""
