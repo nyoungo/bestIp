@@ -9,91 +9,47 @@
 ===== 第2阶段: 丢包率 & 下载速度测试 =====
 
 开始对 30 个候选节点进行丢包和速度测试...
-Ping 失败 104.25.0.1: 返回码 1
-速度测试失败 104.25.0.1: HTTPSConnectionPool(host='104.25.0.1', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 1/30: 104.25.0.1 延迟=1ms 丢包=100.0% 速度=0.0Mbps 评分=39.8
-Ping 失败 188.114.96.16: 返回码 1
-  测试 2/30: 188.114.96.16 延迟=1ms 丢包=100.0% 速度=0.04Mbps 评分=39.86
-Ping 失败 188.114.97.12: 返回码 1
-  测试 3/30: 188.114.97.12 延迟=1ms 丢包=100.0% 速度=0.04Mbps 评分=39.86
-Ping 失败 104.24.0.10: 返回码 1
-速度测试失败 104.24.0.10: HTTPSConnectionPool(host='104.24.0.10', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 4/30: 104.24.0.10 延迟=1ms 丢包=100.0% 速度=0.0Mbps 评分=39.8
-Ping 失败 188.114.97.14: 返回码 1
-  测试 5/30: 188.114.97.14 延迟=1ms 丢包=100.0% 速度=0.04Mbps 评分=39.86
-Ping 失败 188.114.96.20: 返回码 1
-  测试 6/30: 188.114.96.20 延迟=1ms 丢包=100.0% 速度=0.04Mbps 评分=39.86
-Ping 失败 188.114.96.19: 返回码 1
-  测试 7/30: 188.114.96.19 延迟=1ms 丢包=100.0% 速度=0.04Mbps 评分=39.86
-Ping 失败 188.114.96.12: 返回码 1
-  测试 8/30: 188.114.96.12 延迟=1ms 丢包=100.0% 速度=0.04Mbps 评分=39.86
-Ping 失败 104.24.0.7: 返回码 1
-速度测试失败 104.24.0.7: HTTPSConnectionPool(host='104.24.0.7', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 9/30: 104.24.0.7 延迟=1ms 丢包=100.0% 速度=0.0Mbps 评分=39.8
-Ping 失败 104.24.0.19: 返回码 1
-速度测试失败 104.24.0.19: HTTPSConnectionPool(host='104.24.0.19', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 10/30: 104.24.0.19 延迟=1ms 丢包=100.0% 速度=0.0Mbps 评分=39.8
-Ping 失败 188.114.97.5: 返回码 1
-  测试 11/30: 188.114.97.5 延迟=1ms 丢包=100.0% 速度=0.04Mbps 评分=39.86
-Ping 失败 104.24.0.12: 返回码 1
-速度测试失败 104.24.0.12: HTTPSConnectionPool(host='104.24.0.12', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 12/30: 104.24.0.12 延迟=1ms 丢包=100.0% 速度=0.0Mbps 评分=39.8
-Ping 失败 104.25.0.3: 返回码 1
-速度测试失败 104.25.0.3: HTTPSConnectionPool(host='104.25.0.3', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 13/30: 104.25.0.3 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 188.114.97.10: 返回码 1
-  测试 14/30: 188.114.97.10 延迟=2ms 丢包=100.0% 速度=0.04Mbps 评分=39.66
-Ping 失败 103.31.4.1: 返回码 1
-速度测试失败 103.31.4.1: HTTPSConnectionPool(host='103.31.4.1', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 15/30: 103.31.4.1 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 104.24.0.1: 返回码 1
-速度测试失败 104.24.0.1: HTTPSConnectionPool(host='104.24.0.1', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 16/30: 104.24.0.1 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 104.25.0.8: 返回码 1
-速度测试失败 104.25.0.8: HTTPSConnectionPool(host='104.25.0.8', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 17/30: 104.25.0.8 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 103.31.4.5: 返回码 1
-速度测试失败 103.31.4.5: HTTPSConnectionPool(host='103.31.4.5', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 18/30: 103.31.4.5 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 188.114.97.13: 返回码 1
-  测试 19/30: 188.114.97.13 延迟=2ms 丢包=100.0% 速度=0.04Mbps 评分=39.66
-Ping 失败 104.25.0.15: 返回码 1
-速度测试失败 104.25.0.15: HTTPSConnectionPool(host='104.25.0.15', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 20/30: 104.25.0.15 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 104.24.0.20: 返回码 1
-速度测试失败 104.24.0.20: HTTPSConnectionPool(host='104.24.0.20', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 21/30: 104.24.0.20 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 188.114.97.2: 返回码 1
-  测试 22/30: 188.114.97.2 延迟=2ms 丢包=100.0% 速度=0.04Mbps 评分=39.66
-Ping 失败 188.114.97.15: 返回码 1
-  测试 23/30: 188.114.97.15 延迟=2ms 丢包=100.0% 速度=0.04Mbps 评分=39.66
-Ping 失败 104.24.0.2: 返回码 1
-速度测试失败 104.24.0.2: HTTPSConnectionPool(host='104.24.0.2', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 24/30: 104.24.0.2 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 188.114.96.8: 返回码 1
-  测试 25/30: 188.114.96.8 延迟=2ms 丢包=100.0% 速度=0.04Mbps 评分=39.66
-Ping 失败 188.114.96.11: 返回码 1
-  测试 26/30: 188.114.96.11 延迟=2ms 丢包=100.0% 速度=0.03Mbps 评分=39.65
-Ping 失败 104.25.0.11: 返回码 1
-速度测试失败 104.25.0.11: HTTPSConnectionPool(host='104.25.0.11', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 27/30: 104.25.0.11 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 103.31.4.3: 返回码 1
-速度测试失败 103.31.4.3: HTTPSConnectionPool(host='103.31.4.3', port=443): Max retries exceeded with url: /__down?bytes=1048576 (Caused by SSLError(SSLError(1, '[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1017)')))
-  测试 28/30: 103.31.4.3 延迟=2ms 丢包=100.0% 速度=0.0Mbps 评分=39.6
-Ping 失败 188.114.97.19: 返回码 1
-  测试 29/30: 188.114.97.19 延迟=2ms 丢包=100.0% 速度=0.04Mbps 评分=39.66
-Ping 失败 188.114.96.14: 返回码 1
-  测试 30/30: 188.114.96.14 延迟=2ms 丢包=100.0% 速度=0.04Mbps 评分=39.66
+检测到 ping 不可用，禁用丢包测试权重
+  测试 1/30: 104.24.0.12 延迟=1ms 丢包=0.0% 速度=1051.15Mbps 评分=99.71
+  测试 2/30: 188.114.97.11 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 3/30: 104.25.0.4 延迟=1ms 丢包=0.0% 速度=1070.33Mbps 评分=99.71
+  测试 4/30: 104.24.0.7 延迟=1ms 丢包=0.0% 速度=877.84Mbps 评分=99.71
+  测试 5/30: 104.25.0.17 延迟=1ms 丢包=0.0% 速度=742.25Mbps 评分=99.71
+  测试 6/30: 103.31.4.7 延迟=1ms 丢包=0.0% 速度=907.16Mbps 评分=99.71
+  测试 7/30: 188.114.96.8 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 8/30: 103.31.4.2 延迟=1ms 丢包=0.0% 速度=476.76Mbps 评分=99.71
+  测试 9/30: 188.114.96.3 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 10/30: 104.24.0.15 延迟=1ms 丢包=0.0% 速度=807.7Mbps 评分=99.71
+  测试 11/30: 103.31.4.8 延迟=1ms 丢包=0.0% 速度=886.11Mbps 评分=99.71
+  测试 12/30: 188.114.97.17 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 13/30: 188.114.96.12 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 14/30: 188.114.97.7 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 15/30: 103.31.4.18 延迟=1ms 丢包=0.0% 速度=761.35Mbps 评分=99.71
+  测试 16/30: 103.31.4.13 延迟=1ms 丢包=0.0% 速度=747.33Mbps 评分=99.71
+  测试 17/30: 103.31.4.4 延迟=1ms 丢包=0.0% 速度=904.62Mbps 评分=99.71
+  测试 18/30: 104.25.0.19 延迟=1ms 丢包=0.0% 速度=834.12Mbps 评分=99.71
+  测试 19/30: 104.25.0.5 延迟=1ms 丢包=0.0% 速度=855.87Mbps 评分=99.71
+  测试 20/30: 103.31.4.11 延迟=1ms 丢包=0.0% 速度=745.16Mbps 评分=99.71
+  测试 21/30: 104.25.0.6 延迟=1ms 丢包=0.0% 速度=794.92Mbps 评分=99.71
+  测试 22/30: 104.24.0.2 延迟=1ms 丢包=0.0% 速度=453.36Mbps 评分=99.71
+  测试 23/30: 188.114.96.18 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 24/30: 104.24.0.1 延迟=1ms 丢包=0.0% 速度=1156.67Mbps 评分=99.71
+  测试 25/30: 188.114.96.11 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 26/30: 104.24.0.3 延迟=1ms 丢包=0.0% 速度=1002.34Mbps 评分=99.71
+  测试 27/30: 188.114.97.16 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 28/30: 188.114.97.3 延迟=1ms 丢包=0.0% 速度=0.04Mbps 评分=56.94
+  测试 29/30: 103.31.4.17 延迟=1ms 丢包=0.0% 速度=828.27Mbps 评分=99.71
+  测试 30/30: 104.25.0.18 延迟=1ms 丢包=0.0% 速度=804.53Mbps 评分=99.71
 
 ===== 最终排名 (IP#国家) =====
-188.114.96.16#美国
-188.114.97.12#美国
-188.114.97.14#美国
-188.114.96.20#美国
-188.114.96.19#美国
-188.114.96.12#美国
-188.114.97.5#美国
-104.25.0.1#美国
-104.24.0.10#美国
+104.24.0.12#美国
+104.25.0.4#美国
+104.24.0.7#美国
+104.25.0.17#美国
+103.31.4.7#美国
+103.31.4.2#美国
+104.24.0.15#美国
+103.31.4.8#美国
+103.31.4.18#美国
 
-全部测试完成，耗时 181 秒，结果已保存至 bestIp.txt
+全部测试完成，耗时 46 秒，结果已保存至 bestIp.txt
