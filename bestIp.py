@@ -3,6 +3,7 @@ import re
 import time
 import threading
 import subprocess
+import traceback
 from queue import Queue
 from datetime import datetime
 import requests
@@ -22,15 +23,17 @@ PING_COUNT = 4
 PING_TIMEOUT = 2
 
 ENABLE_SPEED_TEST = True
-SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=1048576"
-SPEED_TEST_TIMEOUT = 10
+# Cloudflare 官方测速端点路径（1MB）
+SPEED_TEST_PATH = "/__down?bytes=1048576"
+SPEED_TEST_HOST = "speed.cloudflare.com"
+SPEED_TEST_TIMEOUT = 15
 
 WEIGHT_LATENCY = 0.4
 WEIGHT_LOSS = 0.3
 WEIGHT_SPEED = 0.3
 
 TXT_OUTPUT_FILE = "bestIp.txt"
-LOG_FILE = "log.txt"          # 新增日志文件
+LOG_FILE = "log.txt"
 
 COUNTRY_CODES = {
     'US': '美国', 'CN': '中国', 'JP': '日本', 'SG': '新加坡', 'KR': '韩国',
@@ -40,18 +43,28 @@ COUNTRY_CODES = {
     'IT': '意大利', 'ES': '西班牙', 'Unknown': '未知'
 }
 
-# ==================== 日志函数 ====================
+# 线程锁，保护日志文件写入
+log_lock = threading.Lock()
+
 def log(msg, also_print=True):
-    """将消息写入日志文件，同时可选择是否打印到控制台"""
+    """线程安全的日志函数，同时写入文件和控制台"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, 'a', encoding='utf-8') as f:
-        f.write(f"[{timestamp}] {msg}\n")
+    with log_lock:
+        try:
+            with open(LOG_FILE, 'a', encoding='utf-8') as f:
+                f.write(f"[{timestamp}] {msg}\n")
+        except Exception as e:
+            print(f"日志写入失败: {e}")
     if also_print:
         print(msg)
 
-# 初始化日志文件（清空旧内容）
-with open(LOG_FILE, 'w', encoding='utf-8') as f:
-    f.write("")
+# 初始化日志文件
+try:
+    with open(LOG_FILE, 'w', encoding='utf-8') as f:
+        f.write("")
+    log("========== 脚本启动 ==========")
+except Exception as e:
+    print(f"无法初始化日志文件: {e}")
 
 # ==================== 辅助函数 ====================
 def get_ip_country(ip):
@@ -99,7 +112,8 @@ def get_ip_country(ip):
         if len(octets) >= 2 and octets[0] in ('104','108','162','172') and octets[1] in ('18','162','159','64'):
             return '美国'
         return '未知'
-    except Exception:
+    except Exception as e:
+        log(f"IP 国家查询失败 {ip}: {e}")
         return '未知'
 
 def clean_ip(ip_str):
@@ -141,7 +155,8 @@ class CloudflareNodeTester:
                 if s.connect_ex((ip, TEST_PORT)) == 0:
                     return int((time.time() - start) * 1000)
             return None
-        except Exception:
+        except Exception as e:
+            log(f"延迟测试异常 {ip}: {e}")
             return None
 
     def latency_worker(self, queue):
@@ -184,32 +199,45 @@ class CloudflareNodeTester:
             if match:
                 return float(match.group(1))
             return 100.0
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            log(f"Ping 失败 {ip}: 返回码 {e.returncode}")
             return 100.0
-        except Exception:
+        except Exception as e:
+            log(f"Ping 异常 {ip}: {e}")
             return 100.0
 
     def test_download_speed(self, ip):
+        """
+        测试通过指定 IP 访问 Cloudflare 测速文件的下载速度。
+        构造 URL: https://{ip}/__down?bytes=...
+        并设置 Host 头为 speed.cloudflare.com。
+        """
         if not ENABLE_SPEED_TEST:
             return 0.0
         try:
-            headers = {'Host': 'speed.cloudflare.com'}
+            url = f"https://{ip}{SPEED_TEST_PATH}"
+            headers = {'Host': SPEED_TEST_HOST}
             start = time.time()
-            resp = requests.get(SPEED_TEST_URL, headers=headers, timeout=SPEED_TEST_TIMEOUT,
-                                verify=False)
-            if resp.status_code == 200:
-                elapsed = time.time() - start
-                data_len = len(resp.content)
-                speed_mbps = (data_len * 8) / (elapsed * 1_000_000)
+            # 忽略 SSL 证书验证（因为证书域名与 IP 不匹配，但测速无影响）
+            resp = requests.get(url, headers=headers, timeout=SPEED_TEST_TIMEOUT,
+                                stream=True, verify=False)
+            total_bytes = 0
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    total_bytes += len(chunk)
+            elapsed = time.time() - start
+            if elapsed > 0 and total_bytes > 0:
+                speed_mbps = (total_bytes * 8) / (elapsed * 1_000_000)
                 return round(speed_mbps, 2)
             return 0.0
-        except Exception:
+        except Exception as e:
+            log(f"速度测试失败 {ip}: {e}")
             return 0.0
 
     def calculate_score(self, latency_ms, loss_percent, speed_mbps):
         latency_score = max(0, min(100, 100 - (latency_ms / 2))) if latency_ms else 0
         loss_score = 100 - loss_percent
-        speed_score = min(100, (speed_mbps / 50) * 100)
+        speed_score = min(100, (speed_mbps / 20) * 100)  # 假设 20 Mbps 为满分
         total = (latency_score * WEIGHT_LATENCY +
                  loss_score * WEIGHT_LOSS +
                  speed_score * WEIGHT_SPEED)
@@ -237,36 +265,46 @@ class CloudflareNodeTester:
 
     def run(self):
         start_time = time.time()
+        try:
+            self.fetch_known_nodes()
+            if not self.nodes:
+                log("未找到任何节点，退出")
+                with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+                    f.write("# 没有找到任何可测试的节点\n")
+                return
 
-        self.fetch_known_nodes()
-        if not self.nodes:
-            log("未找到任何节点，退出")
-            return
+            log("\n===== 第1阶段: TCP 延迟测试 =====")
+            self.test_all_latency()
 
-        log("\n===== 第1阶段: TCP 延迟测试 =====")
-        self.test_all_latency()
+            reachable = [r for r in self.latency_results if r['reachable']]
+            if not reachable:
+                log("警告：没有可达节点，无法产生有效结果。将生成空结果文件。")
+                with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+                    f.write("# 没有可达的 Cloudflare 节点\n")
+                return
 
-        reachable = [r for r in self.latency_results if r['reachable']]
-        if not reachable:
-            log("没有可达节点，退出")
-            return
-        reachable.sort(key=lambda x: x['latency_ms'])
-        candidate_ips = [r['ip'] for r in reachable[:CANDIDATE_COUNT]]
-        log(f"已筛选出 {len(candidate_ips)} 个延迟最低的节点进行详细测试")
+            reachable.sort(key=lambda x: x['latency_ms'])
+            candidate_ips = [r['ip'] for r in reachable[:CANDIDATE_COUNT]]
+            log(f"已筛选出 {len(candidate_ips)} 个延迟最低的节点进行详细测试")
 
-        log("\n===== 第2阶段: 丢包率 & 下载速度测试 =====")
-        detailed_results = self.detailed_test(candidate_ips)
+            log("\n===== 第2阶段: 丢包率 & 下载速度测试 =====")
+            detailed_results = self.detailed_test(candidate_ips)
 
-        log("\n===== 最终排名 (IP#国家) =====")
-        # 将结果写入 bestIp.txt，并同时记录到日志（但不影响 bestIp.txt 的纯净）
-        with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-            for i, node in enumerate(detailed_results[:TOP_NODES], 1):
-                country = get_ip_country(node['ip'])
-                line = f"{node['ip']}#{country}"
-                f.write(line + '\n')
-                log(line)   # 同时写入日志和控制台
-        elapsed = int(time.time() - start_time)
-        log(f"\n全部测试完成，耗时 {elapsed} 秒，结果已保存至 {TXT_OUTPUT_FILE}")
+            log("\n===== 最终排名 (IP#国家) =====")
+            with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+                for i, node in enumerate(detailed_results[:TOP_NODES], 1):
+                    country = get_ip_country(node['ip'])
+                    line = f"{node['ip']}#{country}"
+                    f.write(line + '\n')
+                    log(line)
+
+            elapsed = int(time.time() - start_time)
+            log(f"\n全部测试完成，耗时 {elapsed} 秒，结果已保存至 {TXT_OUTPUT_FILE}")
+
+        except Exception as e:
+            log(f"运行过程中发生未捕获异常: {e}\n{traceback.format_exc()}")
+            with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+                f.write(f"# 脚本运行出错: {e}\n")
 
 # ==================== 主入口 ====================
 if __name__ == "__main__":
@@ -277,4 +315,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         log("\n用户中断了程序")
     except Exception as e:
-        log(f"程序出错: {e}")
+        log(f"顶级异常: {e}\n{traceback.format_exc()}")
+        with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+            f.write(f"# 脚本启动失败: {e}\n")
