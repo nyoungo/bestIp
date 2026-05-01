@@ -17,7 +17,7 @@ from collections import defaultdict
 TEST_TIMEOUT = 3
 TEST_PORT = 443
 MAX_THREADS = 5
-TOP_NODES_PER_COUNTRY = 2   # 每个国家取最快2个
+TOP_NODES_PER_COUNTRY = 2   # 不再使用，保留仅为兼容
 
 ENABLE_LOSS_TEST = True
 PING_COUNT = 4
@@ -321,7 +321,8 @@ class CloudflareNodeTester:
                 'latency_ms': latency,
                 'loss_percent': loss,
                 'speed_mbps': speed,
-                'score': score
+                'score': score,
+                'country': country          # 添加国家信息
             })
             log(f"{country} 测试 {idx}/{len(candidate_ips)}: {ip} 延迟={latency}ms 丢包={loss}% 速度={speed}Mbps 评分={score}")
         detailed.sort(key=lambda x: x['score'], reverse=True)
@@ -342,7 +343,9 @@ class CloudflareNodeTester:
                 log("未加载任何节点，退出")
                 return
 
-            all_results = {}
+            # 全局汇总所有国家详细测试结果
+            all_detailed = []
+
             for country, ips in self.country_nodes.items():
                 log(f"\n===== 开始测试国家: {country} =====")
                 latency_results = self.test_country_latency(country, ips)
@@ -354,14 +357,18 @@ class CloudflareNodeTester:
                 candidate_ips = [r['ip'] for r in reachable[:30]]
                 log(f"{country} 筛选出 {len(candidate_ips)} 个延迟最低的节点")
                 detailed_results = self.detailed_test_for_country(country, latency_results, candidate_ips)
-                all_results[country] = detailed_results[:TOP_NODES_PER_COUNTRY]
+                # 每个节点已包含 'country' 字段
+                all_detailed.extend(detailed_results)
+
+            # ---------- 全局取前 9 个评分最高的节点 ----------
+            all_detailed.sort(key=lambda x: x['score'], reverse=True)
+            top9 = all_detailed[:9]
 
             with open(TXT_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                for country, nodes in all_results.items():
-                    for node in nodes:
-                        line = f"{node['ip']}#{country}"
-                        f.write(line + '\n')
-                        log(line)
+                for node in top9:
+                    line = f"{node['ip']}#{node['country']}"
+                    f.write(line + '\n')
+                    log(line)
 
             elapsed = int(time.time() - start_time)
             log(f"\n全部测试完成，耗时 {elapsed} 秒，结果已保存至 {TXT_OUTPUT_FILE}")
