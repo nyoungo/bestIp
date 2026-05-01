@@ -1,4 +1,4 @@
-108.162.192.12#Canada
-104.16.0.12#Canada
-103.31.4.16#United States
-103.31.4.11#United States
+104.24.0.6#Canada
+104.24.0.7#Canada
+103.31.4.14#United States
+103.31.4.5#United States
