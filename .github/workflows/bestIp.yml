@@ -14,13 +14,11 @@ jobs:
   run-script:
     runs-on: ubuntu-latest
     steps:
-      # ========== 关键修复：深克隆，确保远程跟踪信息准确 ==========
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          persist-credentials: true   # 使后续 git 命令使用 GITHUB_TOKEN
-          fetch-depth: 0              # 深克隆，避免 stale info
-      # ============================================================
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -40,5 +38,4 @@ jobs:
           git add bestIp.txt log.txt
           git commit -m "Auto update bestIp.txt [skip ci]" || echo "No changes to commit"
           git fetch origin main
-          git rebase origin/main
-          git push origin main
+          git push origin main --force-with-lease
