@@ -36,7 +36,7 @@ TXT_OUTPUT_FILE = "bestIp.txt"
 LOG_FILE = "log.txt"
 
 # Cloudflare IPv4 段在线地址
-CIDR_LIST_URL = "https://bestcf.pages.dev/CIDR/all.txt"
+CIDR_LIST_URL = "https://raw.githubusercontent.com/wanwushequ/cfyxip/refs/heads/main/CIDR/all.txt"
 
 # GeoIP 查询配置
 GEOIP_API = "http://ip-api.com/json/{}?fields=country"
