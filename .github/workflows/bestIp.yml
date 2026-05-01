@@ -3,8 +3,12 @@ name: bestIp
 on:
   push:
   schedule:
-    - cron: '0 */1 * * *'   # 每小时运行一次（cron 格式：每3小时应为 '0 */3 * * *'）
+    - cron: '0 */1 * * *'   # 每小时一次
   workflow_dispatch:
+
+concurrency:
+  group: bestIp-singleton
+  cancel-in-progress: false
 
 jobs:
   run-script:
@@ -30,5 +34,4 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add bestIp.txt log.txt
           git commit -m "Auto update bestIp.txt [skip ci]" || echo "No changes to commit"
-          git pull --rebase
-          git push
+          git push --force-with-lease
