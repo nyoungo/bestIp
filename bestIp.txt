@@ -1,6 +1,6 @@
-104.17.19.101#Canada
-104.17.6.176#Canada
-45.64.67.155#India
-45.64.67.197#India
-103.31.4.108#United States
-103.31.4.170#United States
+104.24.43.248#Canada
+104.25.241.250#Canada
+45.64.66.1#India
+45.64.67.177#India
+103.31.4.196#United States
+103.31.4.163#United States
