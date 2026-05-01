@@ -35,7 +35,7 @@ TXT_OUTPUT_FILE = "bestIp.txt"
 LOG_FILE = "log.txt"
 
 # Cloudflare IPv4 段在线地址
-CIDR_LIST_URL = "https://raw.githubusercontent.com/lord-alfred/ipranges/main/cloudflare/ipv4.txt"
+CIDR_LIST_URL = "https://raw.githubusercontent.com/123jjck/cdn-ip-ranges/refs/heads/main/cloudflare/cloudflare_plain_ipv4.txt"
 
 # GeoIP 查询配置
 GEOIP_API = "http://ip-api.com/json/{}?fields=country"
