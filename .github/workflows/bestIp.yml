@@ -1,7 +1,6 @@
 name: bestIp
 
 on:
-  push:
   schedule:
     - cron: '0 */1 * * *'   # 每小时一次
   workflow_dispatch:
