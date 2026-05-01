@@ -9,6 +9,8 @@ from queue import Queue
 from datetime import datetime
 import requests
 import urllib3
+import ipaddress
+from collections import defaultdict
 
 # ==================== 配置参数 ====================
 TEST_TIMEOUT = 3
@@ -32,22 +34,14 @@ WEIGHT_SPEED = 0.3
 TXT_OUTPUT_FILE = "bestIp.txt"
 LOG_FILE = "log.txt"
 
-# 用户提供的 IP 段（按国家分组）
-# 每个项: (国家名称, [IP段列表])
-COUNTRY_NETS = [
-    ("日本", ["108.162.198.0/22"]),
-    ("德国", [
-        "104.21.0.0/24", "104.24.0.0/24", "104.25.0.0/24",
-        "104.27.0.0/24", "104.26.0.0/24"
-    ]),
-    ("新加坡", [
-        "108.162.192.0/24", "162.159.0.0/24", "172.64.32.0/24"
-    ]),
-    ("美国", [
-        "104.16.0.0/22", "104.18.0.0/22", "104.19.0.0/22",
-        "104.17.0.0/22", "103.31.4.0/22", "103.21.244.0/22"
-    ])
-]
+# Cloudflare IPv4 段在线地址
+CIDR_LIST_URL = "https://raw.githubusercontent.com/lord-alfred/ipranges/main/cloudflare/ipv4.txt"
+
+# GeoIP 查询配置
+GEOIP_API = "http://ip-api.com/json/{}?fields=country"
+GEOIP_TIMEOUT = 5
+GEOIP_INTERVAL = 0.8          # 每个查询间隔（秒），避免超限
+MAX_RETRY_GEOIP = 2           # 查询失败重试次数
 
 log_lock = threading.Lock()
 
@@ -74,7 +68,7 @@ except Exception:
 def cidr_to_ips(cidr, max_ips=20):
     """
     将 CIDR 网段转换为 IP 列表，每个网段最多生成 max_ips 个 IP
-    支持 /22 和 /24
+    支持 /22 和 /24 等常见前缀（本质通用）
     """
     network, prefix = cidr.split('/')
     prefix = int(prefix)
@@ -90,8 +84,86 @@ def cidr_to_ips(cidr, max_ips=20):
             ips.append(ip)
         return ips
     else:
-        log(f"不支持的掩码: {prefix}")
-        return []
+        # 通用处理：使用 ipaddress 库
+        try:
+            net = ipaddress.IPv4Network(cidr, strict=False)
+            return [str(net.network_address + i) for i in range(1, min(max_ips, net.num_addresses - 2) + 1)]
+        except Exception:
+            log(f"不支持的掩码: {prefix}")
+            return []
+
+def fetch_cidr_list(url):
+    """从在线 URL 获取 IPv4 CIDR 列表"""
+    try:
+        log(f"正在从 {url} 下载 Cloudflare IPv4 范围...")
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        lines = resp.text.strip().splitlines()
+        cidrs = []
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            # 简单验证是否为有效 CIDR
+            if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$', line):
+                cidrs.append(line)
+        log(f"成功获取 {len(cidrs)} 个 IPv4 CIDR")
+        return list(set(cidrs))  # 去重
+    except Exception as e:
+        log(f"获取 CIDR 列表失败: {e}")
+        sys.exit(1)
+
+def get_country_from_ip(ip):
+    """通过 ip-api.com 查询单个 IP 所属国家"""
+    url = GEOIP_API.format(ip)
+    for attempt in range(MAX_RETRY_GEOIP + 1):
+        try:
+            resp = requests.get(url, timeout=GEOIP_TIMEOUT)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get('country', 'Unknown')
+            else:
+                log(f"GeoIP 查询返回状态码 {resp.status_code}，IP: {ip}", also_print=False)
+        except Exception as e:
+            log(f"GeoIP 查询异常 (尝试 {attempt+1}): {e}", also_print=False)
+        if attempt < MAX_RETRY_GEOIP:
+            time.sleep(1)
+    return 'Unknown'
+
+def build_country_nets(cidrs):
+    """
+    对每个 CIDR 取一个代表 IP，查询国家，构建 COUNTRY_NETS 结构
+    返回: list of (country, [cidr_list])
+    """
+    country_dict = defaultdict(list)
+    total = len(cidrs)
+    log(f"开始对 {total} 个 CIDR 进行国家分类...")
+    for idx, cidr in enumerate(cidrs, 1):
+        try:
+            # 取网络地址 +1 作为代表 IP
+            net = ipaddress.IPv4Network(cidr, strict=False)
+            if net.num_addresses >= 2:
+                rep_ip = str(net.network_address + 1)
+            else:
+                rep_ip = str(net.network_address)   # /32 的情况
+        except Exception as e:
+            log(f"解析 CIDR {cidr} 失败: {e}，跳过")
+            continue
+
+        country = get_country_from_ip(rep_ip)
+        country_dict[country].append(cidr)
+        log(f"[{idx}/{total}] {cidr} -> {rep_ip} -> {country}")
+
+        # 限速，避免请求过快
+        time.sleep(GEOIP_INTERVAL)
+
+    # 转换为历史使用的列表格式
+    result = list(country_dict.items())
+    result.sort(key=lambda x: x[0])  # 按国家名排序，便于阅读
+    log(f"国家分类完成，共 {len(result)} 个国家/地区：")
+    for country, nets in result:
+        log(f"  {country}: {len(nets)} 个 CIDR")
+    return result
 
 # ==================== 测试核心类 ====================
 class CloudflareNodeTester:
@@ -100,9 +172,10 @@ class CloudflareNodeTester:
         self.lock = threading.Lock()
         self.ping_available = True
         self.speed_available = True
+        self.country_nets = []  # 将在运行时动态生成
 
     def fetch_known_nodes(self):
-        for country, nets in COUNTRY_NETS:
+        for country, nets in self.country_nets:
             ips = set()
             for net in nets:
                 generated = cidr_to_ips(net, max_ips=20)
@@ -238,6 +311,13 @@ class CloudflareNodeTester:
     def run(self):
         start_time = time.time()
         try:
+            # ---------- 动态获取 CIDR 并生成 COUNTRY_NETS ----------
+            cidr_list = fetch_cidr_list(CIDR_LIST_URL)
+            self.country_nets = build_country_nets(cidr_list)
+            if not self.country_nets:
+                log("未生成任何国家-IP段映射，退出")
+                return
+
             self.fetch_known_nodes()
             if not self.country_nodes:
                 log("未加载任何节点，退出")
