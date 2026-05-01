@@ -5,6 +5,7 @@ import time
 import threading
 import subprocess
 import traceback
+import random
 from queue import Queue
 from datetime import datetime
 import requests
@@ -35,7 +36,7 @@ TXT_OUTPUT_FILE = "bestIp.txt"
 LOG_FILE = "log.txt"
 
 # Cloudflare IPv4 段在线地址
-CIDR_LIST_URL = "https://raw.githubusercontent.com/123jjck/cdn-ip-ranges/refs/heads/main/cloudflare/cloudflare_plain_ipv4.txt"
+CIDR_LIST_URL = "https://bestcf.pages.dev/CIDR/all.txt"
 
 # GeoIP 查询配置
 GEOIP_API = "http://ip-api.com/json/{}?fields=country"
@@ -67,30 +68,28 @@ except Exception:
 # ==================== 辅助函数 ====================
 def cidr_to_ips(cidr, max_ips=20):
     """
-    将 CIDR 网段转换为 IP 列表，每个网段最多生成 max_ips 个 IP
-    支持 /22 和 /24 等常见前缀（本质通用）
+    从 CIDR 网段中随机抽取最多 max_ips 个有效主机 IP
     """
-    network, prefix = cidr.split('/')
-    prefix = int(prefix)
-    octets = list(map(int, network.split('.')))
-    if prefix == 24:
-        base = f"{octets[0]}.{octets[1]}.{octets[2]}"
-        return [f"{base}.{i}" for i in range(1, min(max_ips, 254)+1)]
-    elif prefix == 22:
-        third_base = octets[2] & 0xFC  # 抹掉低2位
-        ips = []
-        for i in range(1, min(max_ips, 254)+1):
-            ip = f"{octets[0]}.{octets[1]}.{third_base}.{i}"
-            ips.append(ip)
-        return ips
-    else:
-        # 通用处理：使用 ipaddress 库
-        try:
-            net = ipaddress.IPv4Network(cidr, strict=False)
-            return [str(net.network_address + i) for i in range(1, min(max_ips, net.num_addresses - 2) + 1)]
-        except Exception:
-            log(f"不支持的掩码: {prefix}")
+    try:
+        net = ipaddress.IPv4Network(cidr, strict=False)
+        # 收集所有可用主机地址
+        if net.prefixlen == 32:
+            hosts = [net.network_address]
+        elif net.prefixlen == 31:
+            hosts = list(net.hosts())
+        else:
+            hosts = list(net.hosts())
+
+        if not hosts:
             return []
+
+        # 随机抽取，最多 max_ips 个
+        sample_size = min(max_ips, len(hosts))
+        sampled_ips = random.sample(hosts, sample_size)
+        return [str(ip) for ip in sampled_ips]
+    except Exception as e:
+        log(f"无法解析 CIDR {cidr}: {e}")
+        return []
 
 def fetch_cidr_list(url):
     """从在线 URL 获取 IPv4 CIDR 列表"""
@@ -175,13 +174,33 @@ class CloudflareNodeTester:
         self.country_nets = []  # 将在运行时动态生成
 
     def fetch_known_nodes(self):
+        """加载网段并预检首IP，只保留可达网段，从中随机抽取IP"""
         for country, nets in self.country_nets:
             ips = set()
             for net in nets:
+                # 获取该网段的第一个可用 IP（网络地址+1 或网络地址）
+                try:
+                    net_obj = ipaddress.IPv4Network(net, strict=False)
+                    first_ip = str(net_obj.network_address + 1) if net_obj.num_addresses >= 2 else str(net_obj.network_address)
+                except Exception as e:
+                    log(f"解析 CIDR {net} 失败: {e}，跳过")
+                    continue
+
+                # 预检测：如果第一个 IP 不通，跳过整个网段
+                if self.test_latency(first_ip) is None:
+                    log(f"跳过不可达网段: {net} (首IP {first_ip} 不通)")
+                    continue
+
+                # 首IP连通，随机抽取网段内的最多20个IP
                 generated = cidr_to_ips(net, max_ips=20)
                 ips.update(generated)
-            self.country_nodes[country] = ips
-            log(f"{country} 加载 {len(ips)} 个候选 IP")
+                log(f"网段 {net} 首IP可达，随机抽取 {len(generated)} 个 IP 加入测试", also_print=False)
+
+            if ips:
+                self.country_nodes[country] = ips
+                log(f"{country} 加载 {len(ips)} 个候选 IP")
+            else:
+                log(f"{country} 没有可用网段，跳过")
 
     def test_latency(self, ip):
         try:
