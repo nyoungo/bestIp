@@ -1,0 +1,38 @@
+name: Process IP List
+
+on:
+  push:                     # 新增：每次 push 时立即执行
+    branches: [ main, master ]   # 可根据需要指定分支
+  schedule:
+    - cron: '*/10 * * * *'  # 每10分钟运行一次
+  workflow_dispatch:        # 手动触发
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run processing script
+        run: python process.py -u https://raw.githubusercontent.com/HandsomeMJZ/cfip/refs/heads/main/best_ips.txt -o ip.txt
+
+      - name: Commit and push ip.txt
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add ip.txt
+          git commit -m "Auto update ip.txt [skip ci]" || echo "No changes to commit"
+          git pull --rebase
+          git push
