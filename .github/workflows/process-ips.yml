@@ -1,10 +1,8 @@
 name: Process IP List
 
 on:
-  push:                     # 新增：每次 push 时立即执行
-    branches: [ main, master ]   # 可根据需要指定分支
   schedule:
-    - cron: '*/10 * * * *'  # 每10分钟运行一次
+    - cron: '0 */2 * * *'   # 每2小时运行一次（例如 0:00, 2:00, 4:00...）
   workflow_dispatch:        # 手动触发
 
 jobs:
