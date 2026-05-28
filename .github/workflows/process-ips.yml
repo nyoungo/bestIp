@@ -24,13 +24,13 @@ jobs:
         run: pip install requests
 
       - name: Run processing script
-        run: python process.py -u https://raw.githubusercontent.com/HandsomeMJZ/cfip/refs/heads/main/best_ips.txt -o ip.txt
+        run: python process.py   # 脚本不再需要命令行参数
 
-      - name: Commit and push ip.txt
+      - name: Commit and push results
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add ip.txt
-          git commit -m "Auto update ip.txt [skip ci]" || echo "No changes to commit"
+          git add liantong.txt yidong.txt dianxin.txt
+          git commit -m "Auto update IP lists [skip ci]" || echo "No changes to commit"
           git pull --rebase
           git push
