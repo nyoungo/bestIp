@@ -2,7 +2,6 @@
 import re
 import sys
 import requests
-import argparse
 from pathlib import Path
 
 def fetch_content(url: str) -> str:
@@ -12,7 +11,7 @@ def fetch_content(url: str) -> str:
         response.raise_for_status()
         return response.text
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching URL: {e}", file=sys.stderr)
+        print(f"Error fetching URL {url}: {e}", file=sys.stderr)
         sys.exit(1)
 
 def process_line(line: str) -> list[str]:
@@ -48,17 +47,18 @@ def save_output(data: list[str], output_file: str) -> None:
             f.write('\n')
 
 def main():
-    parser = argparse.ArgumentParser(description='Process IP list.')
-    parser.add_argument('-u', '--url',
-                        default='https://raw.githubusercontent.com/HandsomeMJZ/cfip/refs/heads/main/best_ips.txt',
-                        help='URL to fetch data from')
-    parser.add_argument('-o', '--output', default='ip.txt',
-                        help='Output file name')
-    args = parser.parse_args()
-    content = fetch_content(args.url)
-    processed = process_content(content)
-    save_output(processed, args.output)
-    print(f"Processed {len(processed)} entries and saved to {args.output}")
+    tasks = [
+        ("https://raw.githubusercontent.com/HandsomeMJZ/cfip/refs/heads/main/best_ips.txt", "liantong.txt"),
+        ("https://raw.githubusercontent.com/svip-s/cloudflare_ip/refs/heads/main/best_ips.txt", "yidong.txt"),
+        ("https://raw.githubusercontent.com/love-ztm/cfip/refs/heads/main/ubest_ips.txt", "dianxin.txt")
+    ]
+
+    for url, output_file in tasks:
+        print(f"Processing {url} -> {output_file}")
+        content = fetch_content(url)
+        processed = process_content(content)
+        save_output(processed, output_file)
+        print(f"Processed {len(processed)} entries and saved to {output_file}")
 
 if __name__ == "__main__":
     main()
