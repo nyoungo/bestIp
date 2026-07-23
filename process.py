@@ -48,9 +48,9 @@ def save_output(data: list[str], output_file: str) -> None:
 
 def main():
     tasks = [
-        ("https://raw.githubusercontent.com/HandsomeMJZ/cfip/refs/heads/main/best_ips.txt", "liantong.txt"),
+        ("https://cf.junzhen.qzz.io/best_ips.txt", "liantong.txt"),
         ("https://raw.githubusercontent.com/svip-s/cloudflare_ip/refs/heads/main/best_ips.txt", "yidong.txt"),
-        ("https://raw.githubusercontent.com/love-ztm/cfip/refs/heads/main/ubest_ips.txt", "dianxin.txt")
+        ("https://raw.githubusercontent.com/love-ztm/cfip/refs/heads/main/best_ips.txt", "dianxin.txt")
     ]
 
     for url, output_file in tasks:
