@@ -1,36 +1,71 @@
-name: Process IP List
+name: process-ips
 
 on:
   schedule:
-    - cron: '0 */2 * * *'   # 每2小时运行一次（例如 0:00, 2:00, 4:00...）
-  workflow_dispatch:        # 手动触发
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Run processing script
-        run: python process.py   # 脚本不再需要命令行参数
-
-      - name: Commit and push results
+      - name: Fetch and Process WeTest
         run: |
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add liantong.txt yidong.txt dianxin.txt
-          git commit -m "Auto update IP lists [skip ci]" || echo "No changes to commit"
-          git pull --rebase
-          git push
+          mkdir -p wetest
+          BJ_TIME=$(date -d "+8 hours" "+%m-%d %H:%M")
+          HAS_CHANGES=false
+          
+          # 临时文件定义
+          TMP_NEW="new_wetest_v4.tmp"
+          TMP_OLD="old_wetest_v4.tmp"
+          TARGET_FILE="wetest/ipv4.txt"
+
+          # 1. 抓取并解析数据 (使用 curl + grep + sed + awk)
+          # 逻辑：抓取页面 -> 提取特定 label 的内容 -> 去掉标签 -> 组合格式
+          curl -s --connect-timeout 5 --max-time 15 \ -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+          "https://www.wetest.vip/page/cloudflare/address_v4.html" | \
+          grep -E 'data-label="(线路名称|优选地址|数据中心)"' | \
+          sed 's/<[^>]*>//g; s/^[ \t]*//' | \
+          awk 'NR%3==1{line=$0} NR%3==2{addr=$0} NR%3==0{print addr":443#微测优选 | " line " | "$0" | "addr}' \
+          > "$TMP_NEW"
+
+          # 2. 比对逻辑
+          if [ -f "$TARGET_FILE" ]; then
+            if ! diff -q "$TARGET_FILE" "$TMP_NEW" > /dev/null; then
+              SHOULD_WRITE=true
+            else
+              SHOULD_WRITE=false
+            fi
+          else
+            SHOULD_WRITE=true
+          fi
+
+          # 3. 写入文件（带真香广告头尾）
+          if [ "$SHOULD_WRITE" = true ]; then
+            cat "$TMP_NEW" > "$TARGET_FILE"
+            HAS_CHANGES=true
+            echo "检测到数据更新，已生成新文件。"
+          else
+            echo "内容无实质变化。"
+          fi
+
+          echo "has_changes=$HAS_CHANGES" >> $GITHUB_ENV
+
+      - name: Commit and Push
+        run: |
+          if [ "${{ env.has_changes }}" = "true" ]; then
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add wetest/ipv4.txt
+            git commit -m "WeTest $(date -d "+8 hours" '+%Y-%m-%d %H:%M:%S')"
+            git pull --rebase origin main
+            git push origin main
+          else
+            echo "跳过提交：内容未变。"
+          fi
