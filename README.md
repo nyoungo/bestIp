@@ -1,10 +1,5 @@
 ## 优选CFIP
 
-### liantong.txt(联通) yidong.txt(移动) dianxin.txt(电信)
-
-```
-基于HandsomeMJZ的优选结果进行格式化
-```
 
 ### ip2.txt
 
